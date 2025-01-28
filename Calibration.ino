@@ -12,10 +12,24 @@
 
 #define TOUCH_CS   15
 #define TOUCH_IRQ  27
+#define TOUCH_SCLK 14
+#define TOUCH_MISO 12
+#define TOUCH_MOSI 13
+
+#define BACKLIGHT_PIN 21
+
+// ------------------ ثابت‌ها و تنظیمات ------------------
+#define PRIMARY_COLOR    0x18C3
+#define SECONDARY_COLOR  0x4A69
+#define ACCENT_COLOR     0x03FF
+#define BACKGROUND_COLOR 0x10A2
+#define TEXT_COLOR       0xFFFF
 
 // ------------------ تنظیمات SPI ------------------
-SPIClass vspi(VSPI); // استفاده از SPI سرعت بالا (VSPI)
-Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
+SPIClass vspi(VSPI); // SPI برای صفحه‌نمایش (VSPI)
+SPIClass hspi(HSPI); // SPI برای تاچ‌اسکرین (HSPI)
+
+Adafruit_ST7789 tft = Adafruit_ST7789(&vspi, TFT_CS, TFT_DC, TFT_RST);
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 
 // ------------------ متغیرهای کالیبره‌کردن ------------------
@@ -25,14 +39,19 @@ int touch_min_y = 1000, touch_max_y = 0;
 void setup() {
   Serial.begin(115200);
 
-  // راه‌اندازی صفحه‌نمایش
+  // راه‌اندازی صفحه‌نمایش با VSPI
+  vspi.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TFT_CS); // تنظیم پین‌های VSPI
   tft.init(240, 320); // اندازه صفحه‌نمایش
   tft.setRotation(1); // تنظیم جهت صفحه‌نمایش (در صورت نیاز تغییر دهید)
   tft.fillScreen(ST77XX_BLACK); // پاک‌سازی صفحه با رنگ سیاه
 
-  // راه‌اندازی تاچ‌اسکرین
+  // راه‌اندازی تاچ‌اسکرین با HSPI
+  hspi.begin(TOUCH_SCLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS); // تنظیم پین‌های HSPI
   touch.begin();
-  SPI.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TOUCH_CS); // تنظیم SPI برای تاچ‌اسکرین
+
+  // روشن کردن نور پس‌زمینه
+  pinMode(BACKLIGHT_PIN, OUTPUT);
+  digitalWrite(BACKLIGHT_PIN, HIGH);
 
   Serial.println("Touchscreen calibration started. Touch the corners of the screen.");
 }
