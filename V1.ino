@@ -55,6 +55,8 @@ AppIcon apps[6] = {
   {120, 260, 80, 80, "Power"}
 };
 
+bool inApp = false; // نشان‌دهنده فعال بودن برنامه
+
 // ------------------ توابع کمکی ------------------
 void drawRoundedRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t radius, uint16_t color) {
   tft.fillRoundRect(x, y, w, h, radius, color);
@@ -72,7 +74,7 @@ void drawStatusBar() {
   tft.fillRect(0, 0, 240, 30, PRIMARY_COLOR);
   tft.setTextColor(TEXT_COLOR);
   tft.setCursor(10, 8);
-  tft.print("ESP32 Phone v1.0");
+  tft.print("ESP32 Phone v1.1");
   
   // آیکون وایفای
   tft.fillCircle(210, 15, 8, WIFI_ICON_COLOR);
@@ -84,13 +86,21 @@ void drawStatusBar() {
 }
 
 void drawAppIcons() {
-  for(int i = 0; i < 6; i++) {
+  for (int i = 0; i < 6; i++) {
     drawRoundedRect(apps[i].x, apps[i].y, apps[i].width, apps[i].height, 15, SECONDARY_COLOR);
     tft.setTextColor(TEXT_COLOR);
     tft.setTextSize(1);
     tft.setCursor(apps[i].x + 15, apps[i].y + apps[i].height + 5);
     tft.print(apps[i].label);
   }
+}
+
+void drawBackButton() {
+  drawRoundedRect(10, 10, 60, 30, 10, ACCENT_COLOR);
+  tft.setTextColor(TEXT_COLOR);
+  tft.setCursor(20, 18);
+  tft.setTextSize(1);
+  tft.print("Back");
 }
 
 // ------------------ Setup & Loop ------------------
@@ -110,29 +120,41 @@ void setup() {
   hspi.begin(TOUCH_SCLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
   touch.begin(hspi);
   
+  WiFi.mode(WIFI_STA);
+  WiFi.disconnect();
+
   drawStatusBar();
   drawAppIcons();
 }
 
 void loop() {
   static uint32_t last_touch = 0;
-  
+
   if (touch.touched()) {
     TS_Point p = touch.getPoint();
-    int16_t x = map(p.x, 250, 3750, 0, 240);
-    int16_t y = map(p.y, 250, 3750, 0, 320);
-    
+    int16_t x = map(p.y, 250, 3750, 0, 240); // تنظیمات عمودی
+    int16_t y = map(p.x, 250, 3750, 0, 320); // تنظیمات عمودی
+
     if (millis() - last_touch > 200) { // Debounce
       handleTouch(x, y);
       last_touch = millis();
     }
   }
-  
-  updateClock();
 }
 
 // ------------------ منطق تاچ ------------------
 void handleTouch(int16_t x, int16_t y) {
+  if (inApp) {
+    // بررسی لمس دکمه Back
+    if (x > 10 && x < 70 && y > 10 && y < 40) {
+      inApp = false;
+      tft.fillScreen(BACKGROUND_COLOR);
+      drawStatusBar();
+      drawAppIcons();
+    }
+    return;
+  }
+
   for (int i = 0; i < 6; i++) {
     if (x > apps[i].x && x < apps[i].x + apps[i].width &&
         y > apps[i].y && y < apps[i].y + apps[i].height) {
@@ -150,16 +172,33 @@ void handleTouch(int16_t x, int16_t y) {
 void launchApp(String appName) {
   tft.fillScreen(BACKGROUND_COLOR);
   drawStatusBar();
+  drawBackButton();
+  inApp = true;
   
-  tft.setTextColor(ACCENT_COLOR);
-  tft.setTextSize(2);
-  tft.setCursor(50, 60);
-  tft.print(appName + " App");
+  if (appName == "WiFi") {
+    displayWiFiNetworks();
+  } else {
+    tft.setTextColor(ACCENT_COLOR);
+    tft.setTextSize(2);
+    tft.setCursor(50, 60);
+    tft.print(appName + " App");
+  }
+}
+
+void displayWiFiNetworks() {
+  int n = WiFi.scanNetworks();
+  tft.setTextSize(1);
+  tft.setTextColor(TEXT_COLOR);
+  tft.setCursor(10, 60);
   
-  delay(2000);
-  tft.fillScreen(BACKGROUND_COLOR);
-  drawStatusBar();
-  drawAppIcons();
+  if (n == 0) {
+    tft.print("No networks found.");
+  } else {
+    for (int i = 0; i < n && i < 10; i++) {
+      tft.print(WiFi.SSID(i));
+      tft.setCursor(10, 60 + (i + 1) * 15);
+    }
+  }
 }
 
 void updateClock() {
