@@ -7,48 +7,60 @@
 #define TFT_CS   5
 #define TFT_DC   2
 #define TFT_RST  4
-#define TOUCH_CS 15
-#define TOUCH_IRQ 27
+#define TFT_SCLK 18
+#define TFT_MOSI 23
+
+#define TOUCH_CS   15
+#define TOUCH_IRQ  27
+#define TOUCH_SCLK 14
+#define TOUCH_MISO 12
+#define TOUCH_MOSI 13
 
 Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 
-uint16_t rawX[4], rawY[4]; // ذخیره مختصات خام لمس‌شده
+// ------------------ متغیرهای کالیبراسیون ------------------
+uint16_t rawX[4], rawY[4]; // مختصات خام لمس
 int calibrationStep = 0;   // مرحله کالیبراسیون
 
-// ------------------ تنظیمات اولیه ------------------
+// ------------------ Setup ------------------
 void setup() {
   Serial.begin(115200);
 
+  // تنظیمات صفحه‌نمایش
   tft.init(240, 320);
   tft.setRotation(0);
   tft.fillScreen(ST77XX_BLACK);
   tft.setTextColor(ST77XX_WHITE);
   tft.setTextSize(2);
 
-  if (!touch.begin()) {
-    Serial.println("Error: Touch screen not detected!");
-    while (1);
-  }
+  // تنظیمات تاچ
+  SPI.begin(TOUCH_SCLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
+  touch.begin();
+  touch.setRotation(0); // تنظیم چرخش برای تاچ
 
+  // شروع کالیبراسیون
   showCalibrationPoint(calibrationStep);
 }
 
-// ------------------ حلقه اصلی ------------------
+// ------------------ Loop ------------------
 void loop() {
   if (calibrationStep < 4) {
     if (touch.touched()) {
       TS_Point p = touch.getPoint();
       rawX[calibrationStep] = p.x;
       rawY[calibrationStep] = p.y;
+
       Serial.print("Point ");
       Serial.print(calibrationStep + 1);
       Serial.print(": X = ");
       Serial.print(rawX[calibrationStep]);
       Serial.print(", Y = ");
       Serial.println(rawY[calibrationStep]);
+
       calibrationStep++;
-      delay(500); // تاخیر برای جلوگیری از لمس دوباره
+      delay(500); // جلوگیری از لمس مجدد
+
       if (calibrationStep < 4) {
         showCalibrationPoint(calibrationStep);
       } else {
@@ -88,6 +100,7 @@ void finishCalibration() {
   tft.fillScreen(ST77XX_BLACK);
   tft.setCursor(20, 140);
   tft.print("Calibration Done!");
+  
   Serial.println("Calibration completed!");
   Serial.println("Raw Touch Points:");
   for (int i = 0; i < 4; i++) {
@@ -98,5 +111,6 @@ void finishCalibration() {
     Serial.print(", Y = ");
     Serial.println(rawY[i]);
   }
+  
   while (1); // توقف برنامه
 }
