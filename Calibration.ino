@@ -1,53 +1,46 @@
-#include <Adafruit_GFX.h>
-#include <Adafruit_ST7789.h>
-#include <XPT2046_Calibrated.h>
 #include <SPI.h>
-#include <Wire.h>
+#include "XPT2046_Calibrated.h"
 
-// ------------------ پیکربندی پین‌ها ------------------
-// پین‌های نمایشگر
-#define TFT_CS   5
-#define TFT_DC   2
-#define TFT_RST  4
-#define TFT_SCLK 18
-#define TFT_MOSI 23
+// پین‌های تعریف‌شده برای صفحه لمسی
+#define TOUCH_CS   15  // پین انتخاب چیپ
+#define TOUCH_IRQ  27  // پین وقفه (اختیاری)
 
-// پین‌های تاچ
-#define TOUCH_CS   15
-#define TOUCH_IRQ  27
-
-SPIClass vspi(VSPI);
-
-Adafruit_ST7789 tft = Adafruit_ST7789(&vspi, TFT_CS, TFT_DC, TFT_RST);
-// ایجاد شی برای صفحه لمسی با پیکربندی صحیح
+// ایجاد شیء برای صفحه لمسی
 XPT2046_Calibrated touch(TOUCH_CS, TOUCH_IRQ);
+
+// تنظیمات کالیبراسیون
+TS_Calibration calib(
+  TS_Point(200, 200), TS_Point(0, 0),
+  TS_Point(3800, 200), TS_Point(240, 0),
+  TS_Point(200, 3800), TS_Point(0, 320),
+  240, 320
+);
 
 void setup() {
   Serial.begin(115200);
-
-  vspi.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
-  vspi.setFrequency(30000000);
-  tft.init(240, 320);
-  tft.setRotation(0);  // حالت عمودی
-  tft.fillScreen(0x0000);  // پرکردن صفحه با رنگ مشکی
-
-  touch.begin();  // فراخوانی تابع begin بدون پارامتر SPIClass
-
-  // رسم صفحه کالیبراسیون
-  tft.setTextColor(0xFFFF);
-  tft.setCursor(10, 10);
-  tft.setTextSize(2);
-  tft.print("Touch the Crosshairs!");
-
-  // انجام کالیبراسیون
-  touch.calibrate();
+  SPI.begin(); // شروع SPI
   
-  // پس از اتمام کالیبراسیون، مقادیر کالیبراسیون در حافظه ذخیره می‌شود.
-  // شما می‌توانید از مقادیر ذخیره‌شده استفاده کنید.
-  Serial.println("Calibration Complete!");
+  // راه‌اندازی صفحه لمسی
+  if (touch.begin()) {
+    Serial.println("Touchscreen initialized successfully!");
+  } else {
+    Serial.println("Failed to initialize touchscreen.");
+    while (true); // توقف در صورت خطا
+  }
+
+  // اعمال کالیبراسیون
+  touch.setCalibration(calib);
+  Serial.println("Calibration applied.");
 }
 
 void loop() {
-  // در اینجا هیچ کاری نیاز نیست، پس از کالیبراسیون، مقادیر کالیبره شده در حافظه ذخیره می‌شود.
-  // در کد اصلی شما می‌توانید از این مقادیر برای استفاده صحیح از صفحه لمسی استفاده کنید.
+  // بررسی لمس شدن صفحه
+  if (touch.touched()) {
+    TS_Point point = touch.getPoint(); // دریافت مختصات لمس‌شده
+    Serial.print("Touch detected at: X=");
+    Serial.print(point.x);
+    Serial.print(", Y=");
+    Serial.println(point.y);
+    delay(100); // تأخیر برای جلوگیری از پر شدن سریال مانیتور
+  }
 }
