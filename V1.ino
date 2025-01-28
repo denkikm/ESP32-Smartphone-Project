@@ -26,7 +26,8 @@ const int touch_max_y = 3750;
 #define TEXT_COLOR       0xFFFF
 
 // ==================== پیش‌اعلان توابع ====================
-void scanNetworks(); // <--- این خط را اضافه کنید
+void scanNetworks();
+void shutdown();
 
 SPIClass vspi(VSPI);
 Adafruit_ST7789 tft = Adafruit_ST7789(&vspi, TFT_CS, TFT_DC, TFT_RST);
@@ -46,7 +47,7 @@ typedef struct {
 // ==================== آیکون‌های اصلی ====================
 AppIcon homeScreen[] = {
   {30, 80, "WiFi", [](){ currentApp = WIFI_TOOLS; }},
-  {130, 80, "Scan", [](){ scanNetworks(); }}, // <--- حالا کامپایلر تابع را می‌شناسد
+  {130, 80, "Scan", [](){ scanNetworks(); }},
   {30, 180, "Settings", [](){ currentApp = SETTINGS; }},
   {130, 180, "Power", [](){ shutdown(); }}
 };
@@ -62,7 +63,7 @@ void setup() {
   // تنظیمات نمایشگر
   vspi.begin();
   tft.init(240, 320);
-  tft.setRotation(0);
+  tft.setRotation(0);  // حالت عمودی
   tft.fillScreen(DARK_BACKGROUND);
 
   // تنظیمات تاچ
