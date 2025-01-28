@@ -25,6 +25,9 @@ const int touch_max_y = 3750;
 #define ACCENT_COLOR     0x07FF
 #define TEXT_COLOR       0xFFFF
 
+// ==================== پیش‌اعلان توابع ====================
+void scanNetworks(); // <--- این خط را اضافه کنید
+
 SPIClass vspi(VSPI);
 Adafruit_ST7789 tft = Adafruit_ST7789(&vspi, TFT_CS, TFT_DC, TFT_RST);
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
@@ -43,20 +46,10 @@ typedef struct {
 // ==================== آیکون‌های اصلی ====================
 AppIcon homeScreen[] = {
   {30, 80, "WiFi", [](){ currentApp = WIFI_TOOLS; }},
-  {130, 80, "Scan", [](){ scanNetworks(); }},
+  {130, 80, "Scan", [](){ scanNetworks(); }}, // <--- حالا کامپایلر تابع را می‌شناسد
   {30, 180, "Settings", [](){ currentApp = SETTINGS; }},
   {130, 180, "Power", [](){ shutdown(); }}
 };
-
-// ==================== پیش‌اعلان توابع ====================
-void scanNetworks();
-void drawRoundedRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t r, uint16_t color);
-void shutdown();
-void drawStatusBar();
-void updateStatusBar();
-void drawHomeScreen();
-void handleHomeScreen();
-void handleWiFiTools();
 
 // ==================== راه‌اندازی اولیه ====================
 void setup() {
