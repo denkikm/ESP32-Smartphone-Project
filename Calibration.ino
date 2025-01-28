@@ -5,7 +5,7 @@
 #define TOUCH_CS   15  // پین انتخاب چیپ
 #define TOUCH_IRQ  27  // پین وقفه (اختیاری)
 
-// ایجاد شیء برای صفحه لمسی
+// ایجاد شیء صفحه لمسی
 XPT2046_Calibrated touch(TOUCH_CS, TOUCH_IRQ);
 
 // تنظیمات کالیبراسیون
@@ -23,14 +23,12 @@ void setup() {
   // راه‌اندازی صفحه لمسی
   if (touch.begin()) {
     Serial.println("Touchscreen initialized successfully!");
+    touch.calibrate(calib); // اعمال کالیبراسیون
+    Serial.println("Calibration applied.");
   } else {
     Serial.println("Failed to initialize touchscreen.");
     while (true); // توقف در صورت خطا
   }
-
-  // اعمال کالیبراسیون
-  touch.setCalibration(calib);
-  Serial.println("Calibration applied.");
 }
 
 void loop() {
