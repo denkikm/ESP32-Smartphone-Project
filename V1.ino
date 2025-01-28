@@ -48,6 +48,16 @@ AppIcon homeScreen[] = {
   {130, 180, "Power", [](){ shutdown(); }}
 };
 
+// ==================== پیش‌اعلان توابع ====================
+void scanNetworks();
+void drawRoundedRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t r, uint16_t color);
+void shutdown();
+void drawStatusBar();
+void updateStatusBar();
+void drawHomeScreen();
+void handleHomeScreen();
+void handleWiFiTools();
+
 // ==================== راه‌اندازی اولیه ====================
 void setup() {
   Serial.begin(115200);
@@ -160,6 +170,23 @@ void scanNetworks(){
   tft.setCursor(10, 60);
   tft.print(n);
   tft.print(" networks found");
+
+  // نمایش شبکه‌های یافت شده
+  for (int i = 0; i < n; ++i) {
+    tft.setCursor(10, 80 + (i * 20));
+    tft.print(WiFi.SSID(i));
+    tft.print(" (");
+    tft.print(WiFi.RSSI(i));
+    tft.print(")");
+    tft.print((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? " " : "*");
+  }
+}
+
+// ==================== تنظیمات ====================
+void handleSettings(){
+  tft.fillScreen(DARK_BACKGROUND);
+  tft.setCursor(50, 50);
+  tft.print("Settings");
 }
 
 // ==================== توابع کمکی ====================
