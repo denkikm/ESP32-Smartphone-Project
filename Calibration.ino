@@ -1,9 +1,8 @@
 #include <Adafruit_GFX.h>
 #include <Adafruit_ST7789.h>
-#include <XPT2046_Touchscreen.h>
+#include <XPT2046_Calibrated.h>
 #include <SPI.h>
 #include <Wire.h>
-#include <TouchScreen_Calibrator.h>  // کتابخانه کالیبراسیون
 
 // ------------------ پیکربندی پین‌ها ------------------
 // پین‌های نمایشگر
@@ -24,10 +23,7 @@ SPIClass vspi(VSPI);
 SPIClass hspi(HSPI);
 
 Adafruit_ST7789 tft = Adafruit_ST7789(&vspi, TFT_CS, TFT_DC, TFT_RST);
-XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
-
-// ایجاد شی برای کالیبراسیون
-TouchScreen_Calibrator calibrator(tft, touch);
+XPT2046_Calibrated touch(TOUCH_CS, TOUCH_IRQ);
 
 void setup() {
   Serial.begin(115200);
@@ -41,12 +37,21 @@ void setup() {
   hspi.begin(TOUCH_SCLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
   touch.begin(hspi);
 
-  // شروع فرآیند کالیبراسیون
-  calibrator.startCalibration();
+  // رسم صفحه کالیبراسیون
+  tft.setTextColor(0xFFFF);
+  tft.setCursor(10, 10);
+  tft.setTextSize(2);
+  tft.print("Touch the Crosshairs!");
+
+  // انجام کالیبراسیون
+  touch.calibrate();
+  
+  // پس از اتمام کالیبراسیون، مقادیر کالیبراسیون در حافظه ذخیره می‌شود.
+  // شما می‌توانید از مقادیر ذخیره‌شده استفاده کنید.
+  Serial.println("Calibration Complete!");
 }
 
 void loop() {
-  // کالیبراسیون به طور خودکار انجام می‌شود
-  // شما می‌توانید تا زمانی که کالیبراسیون کامل می‌شود، هیچ کاری نکنید.
-  // پس از پایان کالیبراسیون، می‌توانید مقادیر به‌دست آمده را استفاده کنید.
+  // در اینجا هیچ کاری نیاز نیست، پس از کالیبراسیون، مقادیر کالیبره شده در حافظه ذخیره می‌شود.
+  // در کد اصلی شما می‌توانید از این مقادیر برای استفاده صحیح از صفحه لمسی استفاده کنید.
 }
