@@ -2,8 +2,6 @@
 #include <Adafruit_ST7789.h>
 #include <XPT2046_Touchscreen.h>
 #include <SPI.h>
-#include <Wire.h>
-#include <WiFi.h>
 
 // ------------------ پیکربندی پین‌ها ------------------
 #define TFT_CS   5
@@ -27,157 +25,55 @@
 #define BACKGROUND_COLOR 0x10A2
 #define TEXT_COLOR       0xFFFF
 
-SPIClass vspi(VSPI);
-SPIClass hspi(HSPI);
+// ------------------ تنظیمات SPI ------------------
+SPIClass vspi(VSPI); // SPI برای صفحه‌نمایش (VSPI)
+SPIClass hspi(HSPI); // SPI برای تاچ‌اسکرین (HSPI)
 
 Adafruit_ST7789 tft = Adafruit_ST7789(&vspi, TFT_CS, TFT_DC, TFT_RST);
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 
-typedef struct {
-  uint16_t x;
-  uint16_t y;
-  uint16_t width;
-  uint16_t height;
-  String label;
-} AppIcon;
+// ------------------ متغیرهای کالیبره‌کردن ------------------
+int touch_min_x = 1000, touch_max_x = 0;
+int touch_min_y = 1000, touch_max_y = 0;
 
-AppIcon apps[6] = {
-  {20, 60, 80, 80, "WiFi"},
-  {120, 60, 80, 80, "Tools"},
-  {20, 160, 80, 80, "Settings"},
-  {120, 160, 80, 80, "Scan"},
-  {20, 260, 80, 80, "System"},
-  {120, 260, 80, 80, "Power"}
-};
-
-// متغیرهای کالیبراسیون تاچ
-int16_t x_min = 250, x_max = 3750, y_min = 250, y_max = 3750;
-bool isAppRunning = false;
-
-// ------------------ توابع کالیبراسیون ------------------
-void calibrateTouch() {
-  tft.fillScreen(BACKGROUND_COLOR);
-  tft.setTextColor(TEXT_COLOR);
-  tft.setTextSize(1);
-  tft.setCursor(10, 10);
-  tft.println("Touch the corners as instructed.");
-
-  // کالیبراسیون گوشه بالا چپ
-  tft.fillCircle(20, 20, 10, ACCENT_COLOR);
-  while (!touch.touched());
-  TS_Point p = touch.getPoint();
-  x_min = p.x;
-  y_min = p.y;
-  delay(500);
-
-  // کالیبراسیون گوشه پایین راست
-  tft.fillCircle(220, 300, 10, ACCENT_COLOR);
-  while (!touch.touched());
-  p = touch.getPoint();
-  x_max = p.x;
-  y_max = p.y;
-  delay(500);
-
-  tft.fillScreen(BACKGROUND_COLOR);
-  tft.setCursor(10, 10);
-  tft.println("Calibration Complete.");
-  delay(1000);
-}
-
-// ------------------ توابع رسم ------------------
-void drawStatusBar() {
-  tft.fillRect(0, 0, 240, 30, PRIMARY_COLOR);
-  tft.setTextColor(TEXT_COLOR);
-  tft.setCursor(10, 8);
-  tft.print("ESP32 Phone v1.0");
-}
-
-void drawAppIcons() {
-  for (int i = 0; i < 6; i++) {
-    tft.fillRoundRect(apps[i].x, apps[i].y, apps[i].width, apps[i].height, 15, SECONDARY_COLOR);
-    tft.setCursor(apps[i].x + 20, apps[i].y + apps[i].height / 2);
-    tft.setTextColor(TEXT_COLOR);
-    tft.print(apps[i].label);
-  }
-}
-
-void drawBackButton() {
-  tft.fillRoundRect(10, 290, 60, 20, 5, ACCENT_COLOR);
-  tft.setCursor(20, 295);
-  tft.setTextColor(TEXT_COLOR);
-  tft.print("Back");
-}
-
-// ------------------ توابع برنامه ------------------
-void launchApp(String appName) {
-  tft.fillScreen(BACKGROUND_COLOR);
-  drawStatusBar();
-  drawBackButton();
-
-  tft.setCursor(10, 50);
-  tft.setTextColor(TEXT_COLOR);
-  tft.print(appName + " App");
-  
-  isAppRunning = true;
-
-  if (appName == "WiFi") {
-    WiFi.mode(WIFI_STA);
-    WiFi.disconnect();
-    delay(1000);
-    int n = WiFi.scanNetworks();
-    for (int i = 0; i < n; ++i) {
-      tft.setCursor(10, 70 + (i * 15));
-      tft.print(WiFi.SSID(i));
-    }
-  }
-}
-
-void handleTouch(int16_t x, int16_t y) {
-  if (isAppRunning) {
-    if (x > 10 && x < 70 && y > 290 && y < 310) {
-      // بازگشت به صفحه اصلی
-      tft.fillScreen(BACKGROUND_COLOR);
-      drawStatusBar();
-      drawAppIcons();
-      isAppRunning = false;
-    }
-    return;
-  }
-
-  for (int i = 0; i < 6; i++) {
-    if (x > apps[i].x && x < apps[i].x + apps[i].width &&
-        y > apps[i].y && y < apps[i].y + apps[i].height) {
-      launchApp(apps[i].label);
-      break;
-    }
-  }
-}
-
-// ------------------ تنظیمات اولیه ------------------
 void setup() {
   Serial.begin(115200);
-  vspi.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
-  vspi.setFrequency(30000000);
-  tft.init(240, 320);
-  tft.setRotation(0);
 
-  hspi.begin(TOUCH_SCLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
-  touch.begin(hspi);
+  // راه‌اندازی صفحه‌نمایش با VSPI
+  vspi.begin(TFT_SCLK, TFT_MISO, TFT_MOSI, TFT_CS); // تنظیم پین‌های VSPI
+  tft.init(240, 320); // اندازه صفحه‌نمایش
+  tft.setRotation(1); // تنظیم جهت صفحه‌نمایش (در صورت نیاز تغییر دهید)
+  tft.fillScreen(ST77XX_BLACK); // پاک‌سازی صفحه با رنگ سیاه
 
+  // راه‌اندازی تاچ‌اسکرین با HSPI
+  hspi.begin(TOUCH_SCLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS); // تنظیم پین‌های HSPI
+  touch.begin();
+
+  // روشن کردن نور پس‌زمینه
   pinMode(BACKLIGHT_PIN, OUTPUT);
   digitalWrite(BACKLIGHT_PIN, HIGH);
 
-  calibrateTouch();
-  tft.fillScreen(BACKGROUND_COLOR);
-  drawStatusBar();
-  drawAppIcons();
+  Serial.println("Touchscreen calibration started. Touch the corners of the screen.");
 }
 
 void loop() {
   if (touch.touched()) {
-    TS_Point p = touch.getPoint();
-    int16_t x = map(p.x, x_min, x_max, 0, 240);
-    int16_t y = map(p.y, y_min, y_max, 0, 320);
-    handleTouch(x, y);
+    TS_Point p = touch.getPoint(); // دریافت نقطه لمسی
+
+    // به‌روزرسانی مقادیر کمینه و بیشینه
+    if (p.x < touch_min_x) touch_min_x = p.x;
+    if (p.x > touch_max_x) touch_max_x = p.x;
+    if (p.y < touch_min_y) touch_min_y = p.y;
+    if (p.y > touch_max_y) touch_max_y = p.y;
+
+    // نمایش اطلاعات در Serial Monitor
+    Serial.print("Raw X = "); Serial.print(p.x);
+    Serial.print("\tRaw Y = "); Serial.print(p.y);
+    Serial.print("\tMinX = "); Serial.print(touch_min_x);
+    Serial.print("\tMaxX = "); Serial.print(touch_max_x);
+    Serial.print("\tMinY = "); Serial.print(touch_min_y);
+    Serial.print("\tMaxY = "); Serial.println(touch_max_y);
+
+    delay(100); // تاخیر برای جلوگیری از خواندن‌های مکرر
   }
 }
