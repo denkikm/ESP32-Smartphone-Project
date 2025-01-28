@@ -44,12 +44,12 @@ typedef struct {
 } AppIcon;
 
 AppIcon apps[6] = {
-  {20, 60, 80, 80, "WiFi"},
-  {120, 60, 80, 80, "Tools"},
-  {20, 160, 80, 80, "Settings"},
-  {120, 160, 80, 80, "Scan"},
-  {20, 260, 80, 80, "System"},
-  {120, 260, 80, 80, "Power"}
+  {60, 20, 80, 80, "WiFi"},
+  {60, 120, 80, 80, "Tools"},
+  {60, 220, 80, 80, "Settings"},
+  {160, 20, 80, 80, "Scan"},
+  {160, 120, 80, 80, "System"},
+  {160, 220, 80, 80, "Power"}
 };
 
 // ------------------ توابع کمکی ------------------
@@ -97,7 +97,7 @@ void setup() {
   vspi.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
   vspi.setFrequency(30000000);
   tft.init(240, 320);
-  tft.setRotation(0);
+  tft.setRotation(0); // تنظیم حالت عمودی
   tft.fillScreen(BACKGROUND_COLOR);
   
   hspi.begin(TOUCH_SCLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
@@ -112,8 +112,8 @@ void loop() {
   
   if(touch.touched()){
     TS_Point p = touch.getPoint();
-    int16_t x = map(p.x, 250, 3750, 0, 240);
-    int16_t y = map(p.y, 250, 3750, 0, 320);
+    int16_t x = map(p.x, 250, 3750, 0, 240); // تغییر مختصات X
+    int16_t y = map(p.y, 250, 3750, 0, 320); // تغییر مختصات Y
     
     if(millis() - last_touch > 200){ // Debounce
       handleTouch(x, y);
@@ -157,7 +157,8 @@ void launchApp(String appName) {
 
 void updateClock() {
   static uint32_t lastUpdate = 0;
-  if(millis() - lastUpdate > 60000){
+  if(millis() - lastUpdate > 60000)
+  {
     tft.fillRect(160, 8, 60, 20, PRIMARY_COLOR);
     tft.setCursor(160, 8);
     tft.print("12:00"); // باید با RTC ادغام شود
