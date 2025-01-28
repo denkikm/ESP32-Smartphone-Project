@@ -6,30 +6,26 @@
 #include <WiFi.h>
 
 // ------------------ پیکربندی پین‌ها ------------------
-// پین‌های نمایشگر
 #define TFT_CS   5
 #define TFT_DC   2
 #define TFT_RST  4
 #define TFT_SCLK 18
 #define TFT_MOSI 23
 
-// پین‌های تاچ
 #define TOUCH_CS   15
 #define TOUCH_IRQ  27
 #define TOUCH_SCLK 14
 #define TOUCH_MISO 12
 #define TOUCH_MOSI 13
 
-// پین نور پس‌زمینه
 #define BACKLIGHT_PIN 21
 
-// ------------------ ثابت‌های طراحی ------------------
+// ------------------ ثابت‌ها و تنظیمات ------------------
 #define PRIMARY_COLOR    0x18C3
 #define SECONDARY_COLOR  0x4A69
 #define ACCENT_COLOR     0x03FF
 #define BACKGROUND_COLOR 0x10A2
 #define TEXT_COLOR       0xFFFF
-#define WIFI_ICON_COLOR  0x07FF
 
 SPIClass vspi(VSPI);
 SPIClass hspi(HSPI);
@@ -37,7 +33,6 @@ SPIClass hspi(HSPI);
 Adafruit_ST7789 tft = Adafruit_ST7789(&vspi, TFT_CS, TFT_DC, TFT_RST);
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 
-// ------------------ ساختارهای داده ------------------
 typedef struct {
   uint16_t x;
   uint16_t y;
@@ -55,139 +50,134 @@ AppIcon apps[6] = {
   {120, 260, 80, 80, "Power"}
 };
 
-// ------------------ توابع کمکی ------------------
-void drawRoundedRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t radius, uint16_t color) {
-  tft.fillRoundRect(x, y, w, h, radius, color);
-  tft.drawRoundRect(x, y, w, h, radius, darkenColor(color, 20));
+// متغیرهای کالیبراسیون تاچ
+int16_t x_min = 250, x_max = 3750, y_min = 250, y_max = 3750;
+bool isAppRunning = false;
+
+// ------------------ توابع کالیبراسیون ------------------
+void calibrateTouch() {
+  tft.fillScreen(BACKGROUND_COLOR);
+  tft.setTextColor(TEXT_COLOR);
+  tft.setTextSize(1);
+  tft.setCursor(10, 10);
+  tft.println("Touch the corners as instructed.");
+
+  // کالیبراسیون گوشه بالا چپ
+  tft.fillCircle(20, 20, 10, ACCENT_COLOR);
+  while (!touch.touched());
+  TS_Point p = touch.getPoint();
+  x_min = p.x;
+  y_min = p.y;
+  delay(500);
+
+  // کالیبراسیون گوشه پایین راست
+  tft.fillCircle(220, 300, 10, ACCENT_COLOR);
+  while (!touch.touched());
+  p = touch.getPoint();
+  x_max = p.x;
+  y_max = p.y;
+  delay(500);
+
+  tft.fillScreen(BACKGROUND_COLOR);
+  tft.setCursor(10, 10);
+  tft.println("Calibration Complete.");
+  delay(1000);
 }
 
-uint16_t darkenColor(uint16_t color, uint8_t percent) {
-  uint8_t r = ((color >> 11) & 0x1F) * (100 - percent) / 100;
-  uint8_t g = ((color >> 5) & 0x3F) * (100 - percent) / 100;
-  uint8_t b = (color & 0x1F) * (100 - percent) / 100;
-  return (r << 11) | (g << 5) | b;
-}
-
+// ------------------ توابع رسم ------------------
 void drawStatusBar() {
   tft.fillRect(0, 0, 240, 30, PRIMARY_COLOR);
   tft.setTextColor(TEXT_COLOR);
   tft.setCursor(10, 8);
   tft.print("ESP32 Phone v1.0");
-  
-  // آیکون وایفای
-  tft.fillCircle(210, 15, 8, WIFI_ICON_COLOR);
-  tft.drawCircle(210, 15, 10, darkenColor(WIFI_ICON_COLOR, 20));
-  
-  // ساعت
-  tft.setCursor(160, 8);
-  tft.print("12:00");
 }
 
 void drawAppIcons() {
-  for(int i = 0; i < 6; i++) {
-    drawRoundedRect(apps[i].x, apps[i].y, apps[i].width, apps[i].height, 15, SECONDARY_COLOR);
+  for (int i = 0; i < 6; i++) {
+    tft.fillRoundRect(apps[i].x, apps[i].y, apps[i].width, apps[i].height, 15, SECONDARY_COLOR);
+    tft.setCursor(apps[i].x + 20, apps[i].y + apps[i].height / 2);
     tft.setTextColor(TEXT_COLOR);
-    tft.setTextSize(1);
-    tft.setCursor(apps[i].x + 15, apps[i].y + apps[i].height + 5);
     tft.print(apps[i].label);
   }
 }
 
 void drawBackButton() {
-  drawRoundedRect(10, 290, 60, 20, 5, ACCENT_COLOR);
+  tft.fillRoundRect(10, 290, 60, 20, 5, ACCENT_COLOR);
   tft.setCursor(20, 295);
   tft.setTextColor(TEXT_COLOR);
   tft.print("Back");
 }
 
-// ------------------ Setup & Loop ------------------
+// ------------------ توابع برنامه ------------------
+void launchApp(String appName) {
+  tft.fillScreen(BACKGROUND_COLOR);
+  drawStatusBar();
+  drawBackButton();
+
+  tft.setCursor(10, 50);
+  tft.setTextColor(TEXT_COLOR);
+  tft.print(appName + " App");
+  
+  isAppRunning = true;
+
+  if (appName == "WiFi") {
+    WiFi.mode(WIFI_STA);
+    WiFi.disconnect();
+    delay(1000);
+    int n = WiFi.scanNetworks();
+    for (int i = 0; i < n; ++i) {
+      tft.setCursor(10, 70 + (i * 15));
+      tft.print(WiFi.SSID(i));
+    }
+  }
+}
+
+void handleTouch(int16_t x, int16_t y) {
+  if (isAppRunning) {
+    if (x > 10 && x < 70 && y > 290 && y < 310) {
+      // بازگشت به صفحه اصلی
+      tft.fillScreen(BACKGROUND_COLOR);
+      drawStatusBar();
+      drawAppIcons();
+      isAppRunning = false;
+    }
+    return;
+  }
+
+  for (int i = 0; i < 6; i++) {
+    if (x > apps[i].x && x < apps[i].x + apps[i].width &&
+        y > apps[i].y && y < apps[i].y + apps[i].height) {
+      launchApp(apps[i].label);
+      break;
+    }
+  }
+}
+
+// ------------------ تنظیمات اولیه ------------------
 void setup() {
   Serial.begin(115200);
-  
-  // تنظیمات پین نور پس‌زمینه
-  pinMode(BACKLIGHT_PIN, OUTPUT);
-  digitalWrite(BACKLIGHT_PIN, HIGH);
-  
   vspi.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
   vspi.setFrequency(30000000);
   tft.init(240, 320);
-  tft.setRotation(0); // حالت عمودی
-  tft.fillScreen(BACKGROUND_COLOR);
-  
+  tft.setRotation(0);
+
   hspi.begin(TOUCH_SCLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
   touch.begin(hspi);
-  
+
+  pinMode(BACKLIGHT_PIN, OUTPUT);
+  digitalWrite(BACKLIGHT_PIN, HIGH);
+
+  calibrateTouch();
+  tft.fillScreen(BACKGROUND_COLOR);
   drawStatusBar();
   drawAppIcons();
 }
 
 void loop() {
-  static uint32_t last_touch = 0;
-  
   if (touch.touched()) {
     TS_Point p = touch.getPoint();
-    int16_t x = map(p.y, 250, 3750, 0, 240); // اصلاح محور مختصات Y
-    int16_t y = map(p.x, 250, 3750, 0, 320); // اصلاح محور مختصات X
-    
-    if (millis() - last_touch > 200) { // Debounce
-      handleTouch(x, y);
-      last_touch = millis();
-    }
-  }
-  
-  updateClock();
-}
-
-// ------------------ منطق تاچ ------------------
-void handleTouch(int16_t x, int16_t y) {
-  if (x > 10 && x < 70 && y > 290 && y < 310) {
-    tft.fillScreen(BACKGROUND_COLOR);
-    drawStatusBar();
-    drawAppIcons();
-    return;
-  }
-  
-  for (int i = 0; i < 6; i++) {
-    if (x > apps[i].x && x < apps[i].x + apps[i].width &&
-        y > apps[i].y && y < apps[i].y + apps[i].height) {
-        
-      // افکت کلیک
-      drawRoundedRect(apps[i].x, apps[i].y, apps[i].width, apps[i].height, 15, ACCENT_COLOR);
-      delay(100);
-      drawRoundedRect(apps[i].x, apps[i].y, apps[i].width, apps[i].height, 15, SECONDARY_COLOR);
-      
-      launchApp(apps[i].label);
-    }
-  }
-}
-
-void launchApp(String appName) {
-  tft.fillScreen(BACKGROUND_COLOR);
-  drawStatusBar();
-  drawBackButton();
-  
-  if (appName == "WiFi") {
-    WiFi.mode(WIFI_STA);
-    WiFi.begin();
-    int n = WiFi.scanNetworks();
-    tft.setCursor(20, 50);
-    for (int i = 0; i < n; i++) {
-      tft.println(WiFi.SSID(i));
-    }
-  } else {
-    tft.setTextColor(ACCENT_COLOR);
-    tft.setTextSize(2);
-    tft.setCursor(50, 60);
-    tft.print(appName + " App");
-  }
-}
-
-void updateClock() {
-  static uint32_t lastUpdate = 0;
-  if (millis() - lastUpdate > 60000) {
-    tft.fillRect(160, 8, 60, 20, PRIMARY_COLOR);
-    tft.setCursor(160, 8);
-    tft.print("12:00"); // باید با RTC ادغام شود
-    lastUpdate = millis();
+    int16_t x = map(p.x, x_min, x_max, 0, 240);
+    int16_t y = map(p.y, y_min, y_max, 0, 320);
+    handleTouch(x, y);
   }
 }
