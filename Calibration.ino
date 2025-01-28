@@ -2,6 +2,8 @@
 #include <Adafruit_ST7789.h>
 #include <XPT2046_Touchscreen.h>
 #include <SPI.h>
+#include <Wire.h>
+#include <WiFi.h>
 
 // ------------------ پیکربندی پین‌ها ------------------
 #define TFT_CS   5
@@ -16,101 +18,53 @@
 #define TOUCH_MISO 12
 #define TOUCH_MOSI 13
 
-Adafruit_ST7789 tft = Adafruit_ST7789(TFT_CS, TFT_DC, TFT_RST);
+#define BACKLIGHT_PIN 21
+
+// ------------------ ثابت‌ها و تنظیمات ------------------
+#define PRIMARY_COLOR    0x18C3
+#define SECONDARY_COLOR  0x4A69
+#define ACCENT_COLOR     0x03FF
+#define BACKGROUND_COLOR 0x10A2
+#define TEXT_COLOR       0xFFFF
+
+SPIClass vspi(VSPI);
+SPIClass hspi(HSPI);
+
+Adafruit_ST7789 tft = Adafruit_ST7789(&vspi, TFT_CS, TFT_DC, TFT_RST);
 XPT2046_Touchscreen touch(TOUCH_CS, TOUCH_IRQ);
 
-// ------------------ متغیرهای کالیبراسیون ------------------
-uint16_t rawX[4], rawY[4]; // مختصات خام لمس
-int calibrationStep = 0;   // مرحله کالیبراسیون
+// ------------------ متغیرهای کالیبره‌کردن ------------------
+int touch_min_x = 1000, touch_max_x = 0;
+int touch_min_y = 1000, touch_max_y = 0;
 
-// ------------------ Setup ------------------
 void setup() {
   Serial.begin(115200);
+  tft.init(240, 320); // Initialize the display
+  tft.setRotation(1); // Adjust rotation if needed
+  touch.begin();      // Initialize the touchscreen
 
-  // تنظیمات صفحه‌نمایش
-  tft.init(240, 320);
-  tft.setRotation(0);
-  tft.fillScreen(ST77XX_BLACK);
-  tft.setTextColor(ST77XX_WHITE);
-  tft.setTextSize(2);
+  // روشن کردن نور پس‌زمینه
+  pinMode(BACKLIGHT_PIN, OUTPUT);
+  digitalWrite(BACKLIGHT_PIN, HIGH);
 
-  // تنظیمات تاچ
-  SPI.begin(TOUCH_SCLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
-  touch.begin();
-  touch.setRotation(0); // تنظیم چرخش برای تاچ
-
-  // شروع کالیبراسیون
-  showCalibrationPoint(calibrationStep);
+  Serial.println("Touchscreen calibration started. Touch the corners of the screen.");
 }
 
-// ------------------ Loop ------------------
 void loop() {
-  if (calibrationStep < 4) {
-    if (touch.touched()) {
-      TS_Point p = touch.getPoint();
-      rawX[calibrationStep] = p.x;
-      rawY[calibrationStep] = p.y;
+  if (touch.touched()) {
+    TS_Point p = touch.getPoint();
+    if (p.x < touch_min_x) touch_min_x = p.x;
+    if (p.x > touch_max_x) touch_max_x = p.x;
+    if (p.y < touch_min_y) touch_min_y = p.y;
+    if (p.y > touch_max_y) touch_max_y = p.y;
 
-      Serial.print("Point ");
-      Serial.print(calibrationStep + 1);
-      Serial.print(": X = ");
-      Serial.print(rawX[calibrationStep]);
-      Serial.print(", Y = ");
-      Serial.println(rawY[calibrationStep]);
+    Serial.print("X = "); Serial.print(p.x);
+    Serial.print("\tY = "); Serial.print(p.y);
+    Serial.print("\tMinX = "); Serial.print(touch_min_x);
+    Serial.print("\tMaxX = "); Serial.print(touch_max_x);
+    Serial.print("\tMinY = "); Serial.print(touch_min_y);
+    Serial.print("\tMaxY = "); Serial.println(touch_max_y);
 
-      calibrationStep++;
-      delay(500); // جلوگیری از لمس مجدد
-
-      if (calibrationStep < 4) {
-        showCalibrationPoint(calibrationStep);
-      } else {
-        finishCalibration();
-      }
-    }
+    delay(100); // Delay to avoid multiple readings
   }
-}
-
-// ------------------ توابع کالیبراسیون ------------------
-void showCalibrationPoint(int step) {
-  tft.fillScreen(ST77XX_BLACK);
-  tft.setCursor(20, 140);
-  tft.print("Touch the point:");
-
-  switch (step) {
-    case 0: // بالا چپ
-      drawCalibrationDot(20, 20);
-      break;
-    case 1: // بالا راست
-      drawCalibrationDot(220, 20);
-      break;
-    case 2: // پایین چپ
-      drawCalibrationDot(20, 300);
-      break;
-    case 3: // پایین راست
-      drawCalibrationDot(220, 300);
-      break;
-  }
-}
-
-void drawCalibrationDot(int x, int y) {
-  tft.fillCircle(x, y, 5, ST77XX_WHITE);
-}
-
-void finishCalibration() {
-  tft.fillScreen(ST77XX_BLACK);
-  tft.setCursor(20, 140);
-  tft.print("Calibration Done!");
-  
-  Serial.println("Calibration completed!");
-  Serial.println("Raw Touch Points:");
-  for (int i = 0; i < 4; i++) {
-    Serial.print("Point ");
-    Serial.print(i + 1);
-    Serial.print(": X = ");
-    Serial.print(rawX[i]);
-    Serial.print(", Y = ");
-    Serial.println(rawY[i]);
-  }
-  
-  while (1); // توقف برنامه
 }
