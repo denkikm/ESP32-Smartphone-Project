@@ -95,10 +95,10 @@ void drawHomeScreen(){
   tft.fillScreen(DARK_BACKGROUND);
   
   // رسم آیکون‌ها
-  for(int i=0; i<4; i++){
+  for(int i = 0; i < 4; i++){
     drawRoundedRect(homeScreen[i].x, homeScreen[i].y, 80, 80, 15, PRIMARY_COLOR);
     tft.setTextColor(TEXT_COLOR);
-    tft.setCursor(homeScreen[i].x+15, homeScreen[i].y+90);
+    tft.setCursor(homeScreen[i].x + 15, homeScreen[i].y + 90);
     tft.print(homeScreen[i].label);
   }
 }
@@ -106,26 +106,29 @@ void drawHomeScreen(){
 void handleHomeScreen(){
   static uint32_t lastTouch = 0;
 
-  if(touch.touched() && millis() - lastTouch > 200) { // دی‌بانس لمس
-    lastTouch = millis();
-    
+  if (isTouchedDebounced(lastTouch)) { 
     TS_Point p = touch.getPoint();
     int16_t x = map(p.x, touch_min_x, touch_max_x, 0, 240);
     int16_t y = map(p.y, touch_min_y, touch_max_y, 320, 0);
-    
-    for(int i=0; i<4; i++){
-      if(x > homeScreen[i].x && x < homeScreen[i].x+80 &&
-         y > homeScreen[i].y && y < homeScreen[i].y+80){
-         
-        // افکت کلیک
-        drawRoundedRect(homeScreen[i].x, homeScreen[i].y, 80, 80, 15, ACCENT_COLOR);
-        delay(100);
-        drawRoundedRect(homeScreen[i].x, homeScreen[i].y, 80, 80, 15, PRIMARY_COLOR);
-        
-        homeScreen[i].action();
-      }
+
+    checkIconPress(x, y);
+  }
+}
+
+void checkIconPress(int16_t x, int16_t y) {
+  for (int i = 0; i < 4; i++) {
+    if (x > homeScreen[i].x && x < homeScreen[i].x + 80 &&
+        y > homeScreen[i].y && y < homeScreen[i].y + 80) {
+      drawIconClickEffect(i);
+      homeScreen[i].action();
     }
   }
+}
+
+void drawIconClickEffect(int i) {
+  drawRoundedRect(homeScreen[i].x, homeScreen[i].y, 80, 80, 15, ACCENT_COLOR);
+  delay(100); // می‌توانید این تاخیر را کاهش دهید برای واکنش سریع‌تر
+  drawRoundedRect(homeScreen[i].x, homeScreen[i].y, 80, 80, 15, PRIMARY_COLOR);
 }
 
 // ==================== نوار وضعیت ====================
@@ -134,23 +137,24 @@ void drawStatusBar(){
   tft.setTextColor(TEXT_COLOR);
   tft.setCursor(10, 8);
   tft.print("ESP32 Phone");
+
+  // ساعت را از قبل به روز کنید
+  updateClock();
 }
 
-void updateStatusBar(){
-  static uint32_t lastUpdate = 0;
-  if(millis() - lastUpdate > 1000){
-    lastUpdate = millis();
-    
-    // دریافت زمان فعلی
-    time_t now = time(nullptr);
-    struct tm *timeInfo = localtime(&now);
+void updateClock() {
+  static time_t lastTime = 0;
+  time_t now = time(nullptr);
+  
+  if (now != lastTime) {
+    lastTime = now;
+    struct tm* timeInfo = localtime(&now);
     char timeStr[6];
     strftime(timeStr, sizeof(timeStr), "%H:%M", timeInfo);
 
-    // به‌روزرسانی ساعت
-    tft.fillRect(180, 8, 50, 20, PRIMARY_COLOR);
+    tft.fillRect(180, 8, 50, 20, DARK_BACKGROUND); // پاک کردن قسمت ساعت قبلی
     tft.setCursor(180, 8);
-    tft.print(timeStr);
+    tft.print(timeStr); // نمایش ساعت
   }
 }
 
@@ -161,7 +165,7 @@ void handleWiFiTools(){
   tft.print("WiFi Tools");
 }
 
-void scanNetworks(){
+void scanNetworks() {
   tft.fillScreen(DARK_BACKGROUND);
   tft.setCursor(10, 40);
   tft.print("Scanning Networks...");
@@ -169,12 +173,17 @@ void scanNetworks(){
   // اسکن شبکه‌ها
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
-  delay(100);
+  delay(100);  // تاخیر کوتاه برای اطمینان از قطع اتصال قبلی
   
   int n = WiFi.scanNetworks();
   tft.setCursor(10, 60);
   tft.print(n);
   tft.print(" networks found");
+  
+  for (int i = 0; i < n; i++) {
+    tft.setCursor(10, 80 + i * 20);
+    tft.print(WiFi.SSID(i));  // نمایش نام شبکه‌ها
+  }
 }
 
 // ==================== توابع کمکی ====================
@@ -183,7 +192,16 @@ void drawRoundedRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t r,
   tft.drawRoundRect(x, y, w, h, r, color - 0x1000);
 }
 
-void shutdown(){
-  digitalWrite(BACKLIGHT_PIN, LOW);
-  esp_deep_sleep_start();
+bool isTouchedDebounced(uint32_t& lastTouch) {
+  if (touch.touched() && millis() - lastTouch > 200) {
+    lastTouch = millis();
+    return true;
+  }
+  return false;
+}
+
+void shutdown() {
+  digitalWrite(BACKLIGHT_PIN, LOW); // خاموش کردن نور پس‌زمینه
+  WiFi.disconnect();  // قطع اتصال وای‌فای
+  esp_deep_sleep_start();  // وارد خواب عمیق شوید
 }
