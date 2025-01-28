@@ -15,14 +15,11 @@
 // پین‌های تاچ
 #define TOUCH_CS   15
 #define TOUCH_IRQ  27
-#define TOUCH_SCLK 14
-#define TOUCH_MISO 12
-#define TOUCH_MOSI 13
 
 SPIClass vspi(VSPI);
-SPIClass hspi(HSPI);
 
 Adafruit_ST7789 tft = Adafruit_ST7789(&vspi, TFT_CS, TFT_DC, TFT_RST);
+// ایجاد شی برای صفحه لمسی با پیکربندی صحیح
 XPT2046_Calibrated touch(TOUCH_CS, TOUCH_IRQ);
 
 void setup() {
@@ -34,8 +31,7 @@ void setup() {
   tft.setRotation(0);  // حالت عمودی
   tft.fillScreen(0x0000);  // پرکردن صفحه با رنگ مشکی
 
-  hspi.begin(TOUCH_SCLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
-  touch.begin(hspi);
+  touch.begin();  // فراخوانی تابع begin بدون پارامتر SPIClass
 
   // رسم صفحه کالیبراسیون
   tft.setTextColor(0xFFFF);
