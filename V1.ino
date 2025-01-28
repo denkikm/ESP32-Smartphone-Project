@@ -3,6 +3,7 @@
 #include <XPT2046_Touchscreen.h>
 #include <SPI.h>
 #include <WiFi.h>
+#include <time.h> // برای نمایش ساعت دینامیک
 
 // ==================== پیکربندی پین‌ها ====================
 #define TFT_CS        5
@@ -24,10 +25,6 @@ const int touch_max_y = 3750;
 #define DARK_BACKGROUND  0x0020
 #define ACCENT_COLOR     0x07FF
 #define TEXT_COLOR       0xFFFF
-
-// ==================== پیش‌اعلان توابع ====================
-void scanNetworks();
-void shutdown();
 
 SPIClass vspi(VSPI);
 Adafruit_ST7789 tft = Adafruit_ST7789(&vspi, TFT_CS, TFT_DC, TFT_RST);
@@ -63,12 +60,16 @@ void setup() {
   // تنظیمات نمایشگر
   vspi.begin();
   tft.init(240, 320);
-  tft.setRotation(0);  // حالت عمودی
+  tft.setRotation(0);
   tft.fillScreen(DARK_BACKGROUND);
 
   // تنظیمات تاچ
   touch.begin();
   
+  // اتصال به WiFi (برای ساعت دقیق)
+  WiFi.begin("SSID", "PASSWORD");
+  configTime(0, 0, "pool.ntp.org");
+
   drawStatusBar();
   drawHomeScreen();
 }
@@ -103,7 +104,11 @@ void drawHomeScreen(){
 }
 
 void handleHomeScreen(){
-  if(touch.touched()){
+  static uint32_t lastTouch = 0;
+
+  if(touch.touched() && millis() - lastTouch > 200) { // دی‌بانس لمس
+    lastTouch = millis();
+    
     TS_Point p = touch.getPoint();
     int16_t x = map(p.x, touch_min_x, touch_max_x, 0, 240);
     int16_t y = map(p.y, touch_min_y, touch_max_y, 320, 0);
@@ -134,11 +139,18 @@ void drawStatusBar(){
 void updateStatusBar(){
   static uint32_t lastUpdate = 0;
   if(millis() - lastUpdate > 1000){
-    // آپدیت ساعت
+    lastUpdate = millis();
+    
+    // دریافت زمان فعلی
+    time_t now = time(nullptr);
+    struct tm *timeInfo = localtime(&now);
+    char timeStr[6];
+    strftime(timeStr, sizeof(timeStr), "%H:%M", timeInfo);
+
+    // به‌روزرسانی ساعت
     tft.fillRect(180, 8, 50, 20, PRIMARY_COLOR);
     tft.setCursor(180, 8);
-    tft.print("12:00");
-    lastUpdate = millis();
+    tft.print(timeStr);
   }
 }
 
@@ -147,7 +159,6 @@ void handleWiFiTools(){
   tft.fillScreen(DARK_BACKGROUND);
   tft.setCursor(50, 50);
   tft.print("WiFi Tools");
-  // افزودن منطق اسکن شبکه
 }
 
 void scanNetworks(){
@@ -155,7 +166,7 @@ void scanNetworks(){
   tft.setCursor(10, 40);
   tft.print("Scanning Networks...");
   
-  // اسکن واقعی شبکه
+  // اسکن شبکه‌ها
   WiFi.mode(WIFI_STA);
   WiFi.disconnect();
   delay(100);
@@ -164,29 +175,12 @@ void scanNetworks(){
   tft.setCursor(10, 60);
   tft.print(n);
   tft.print(" networks found");
-
-  // نمایش شبکه‌های یافت شده
-  for (int i = 0; i < n; ++i) {
-    tft.setCursor(10, 80 + (i * 20));
-    tft.print(WiFi.SSID(i));
-    tft.print(" (");
-    tft.print(WiFi.RSSI(i));
-    tft.print(")");
-    tft.print((WiFi.encryptionType(i) == WIFI_AUTH_OPEN) ? " " : "*");
-  }
-}
-
-// ==================== تنظیمات ====================
-void handleSettings(){
-  tft.fillScreen(DARK_BACKGROUND);
-  tft.setCursor(50, 50);
-  tft.print("Settings");
 }
 
 // ==================== توابع کمکی ====================
 void drawRoundedRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t r, uint16_t color){
   tft.fillRoundRect(x, y, w, h, r, color);
-  tft.drawRoundRect(x, y, w, h, r, color-0x1000);
+  tft.drawRoundRect(x, y, w, h, r, color - 0x1000);
 }
 
 void shutdown(){
