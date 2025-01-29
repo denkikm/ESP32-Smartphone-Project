@@ -5,21 +5,12 @@
 #include <WiFi.h>
 #include <time.h>
 
-// =================== بهبودهای اصلی ===================
-// 1. جایگزینی String با آرایه کاراکتر برای مدیریت حافظه
-// 2. اضافه شدن سیستم زمان واقعی با NTP
-// 3. بهینهسازی سیستم تاچ با فیلتر نویز
-// 4. سازماندهی مجدد کد با استفاده از کلاسها
-// 5. بهبود سیستم تم تاریک
-// 6. اضافه شدن اسکرول عمودی برای لیست وایفای
-// =====================================================
-
-// ------------------ پیکربندی پیشرفته ------------------
+// -------- تنظیمات NTP برای زمان دقیق --------
 const char* NTP_SERVER = "pool.ntp.org";
-const long GMT_OFFSET_SEC = 12600; // Tehran time (UTC+3:30)
+const long GMT_OFFSET_SEC = 12600; // UTC+3:30 تهران
 const int DAYLIGHT_OFFSET_SEC = 0;
 
-// ------------------ پیکربندی پین‌ها ------------------
+// -------- پین‌های سخت‌افزار --------
 #define TFT_CS   5
 #define TFT_DC   2
 #define TFT_RST  4
@@ -33,30 +24,16 @@ const int DAYLIGHT_OFFSET_SEC = 0;
 #define TOUCH_MOSI 13
 
 #define BACKLIGHT_PIN 32
-#define TOUCH_THRESHOLD 30
+#define TOUCH_THRESHOLD 15
 #define SCROLL_THRESHOLD 20
 
-// ------------------ رنگ‌های پیشرفته ------------------
+// -------- رنگ‌های رابط کاربری --------
 const uint16_t COLORS[2][6] = {
-  { // Light Mode
-    0x18C3,  // PRIMARY
-    0x4A69,  // SECONDARY
-    0x03FF,  // ACCENT
-    0x10A2,  // BACKGROUND
-    0xFFFF,  // TEXT
-    0x07FF   // WIFI_ICON
-  },
-  { // Dark Mode
-    0x0020,  // PRIMARY
-    0x1808,  // SECONDARY
-    0x03EF,  // ACCENT
-    0x0000,  // BACKGROUND
-    0xFFFF,  // TEXT
-    0x02DF   // WIFI_ICON
-  }
+  {0x18C3, 0x4A69, 0x03FF, 0x10A2, 0xFFFF, 0x07FF}, // Light Mode
+  {0x0020, 0x1808, 0x03EF, 0x0000, 0xFFFF, 0x02DF}  // Dark Mode
 };
 
-// ------------------ ساختارهای پیشرفته ------------------
+// -------- ساختار برنامه‌ها --------
 typedef struct {
   const char* label;
   void (*launch)();
@@ -65,33 +42,28 @@ typedef struct {
 
 class TouchManager {
   private:
-    int16_t lastX = -1;
-    int16_t lastY = -1;
+    int16_t lastX = -1, lastY = -1;
     unsigned long lastTime = 0;
     
   public:
     bool getTouch(int16_t &x, int16_t &y) {
       if (!touch.touched()) return false;
-      
       TS_Point p = touch.getPoint();
-      x = map(p.x, 250, 3750, 0, 240);
-      y = map(p.y, 250, 3750, 320, 0);
-      
+
+      // تصحیح مقیاس صفحه لمسی (بر اساس تصویر شما)
+      x = map(p.x, 300, 3800, 0, 240);
+      y = map(p.y, 300, 3800, 320, 0);
+
       // فیلتر نویز
-      if(abs(x - lastX) < TOUCH_THRESHOLD && 
-         abs(y - lastY) < TOUCH_THRESHOLD &&
-         millis() - lastTime < 200) {
-        return false;
-      }
-      
-      lastX = x;
-      lastY = y;
-      lastTime = millis();
+      if(abs(x - lastX) < TOUCH_THRESHOLD && abs(y - lastY) < TOUCH_THRESHOLD &&
+         millis() - lastTime < 150) return false;
+
+      lastX = x; lastY = y; lastTime = millis();
       return true;
     }
 };
 
-// ------------------ متغیرهای سیستمی ------------------
+// -------- متغیرهای سیستمی --------
 SPIClass vspi(VSPI);
 SPIClass hspi(HSPI);
 Adafruit_ST7789 tft = Adafruit_ST7789(&vspi, TFT_CS, TFT_DC, TFT_RST);
@@ -101,189 +73,123 @@ TouchManager touchManager;
 bool darkMode = false;
 uint8_t currentPage = 0;
 int wifiScrollOffset = 0;
+
 const App apps[] = {
   {"WiFi", launchWiFi, updateWiFi},
-  {"Settings", launchSettings, nullptr},
-  // ... سایر اپلیکیشن‌ها
+  {"Tools", launchTools, nullptr},
+  {"Notes", launchNotes, nullptr}
 };
-const int APPS_COUNT = sizeof(apps)/sizeof(App);
+const int APPS_COUNT = sizeof(apps) / sizeof(App);
 
-// ------------------ راه‌اندازی پیشرفته ------------------
+// -------- راه‌اندازی سیستم --------
 void setup() {
   Serial.begin(115200);
-  
-  // راه‌اندازی سخت‌افزار
   pinMode(BACKLIGHT_PIN, OUTPUT);
-  analogWrite(BACKLIGHT_PIN, 180); // کاهش مصرف انرژی
+  analogWrite(BACKLIGHT_PIN, 180);
+
+  vspi.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
+  tft.init(240, 320);
+  tft.setRotation(3);  // تغییر جهت نمایش برای تصحیح نمایشگر
+  tft.fillScreen(getColor(3)); // پس‌زمینه
+
+  hspi.begin(TOUCH_SCLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
+  touch.begin(hspi);
   
-  initDisplay();
-  initTouch();
-  initTime();
-  
+  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
   drawHomeScreen();
 }
 
-void initDisplay() {
-  vspi.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);
-  vspi.setFrequency(30000000);
-  tft.init(240, 320);
-  tft.setRotation(0);
-  tft.fillScreen(getColor(BACKGROUND));
-}
-
-void initTouch() {
-  hspi.begin(TOUCH_SCLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
-  touch.begin(hspi);
-}
-
-void initTime() {
-  configTime(GMT_OFFSET_SEC, DAYLIGHT_OFFSET_SEC, NTP_SERVER);
-}
-
-// ------------------ حلقه اصلی بهبود یافته ------------------
 void loop() {
-  static int16_t touchX, touchY;
-  
-  if(touchManager.getTouch(touchX, touchY)) {
-    handleUI(touchX, touchY);
-  }
-  
-  updateStatusBar();
+  int16_t touchX, touchY;
+  if(touchManager.getTouch(touchX, touchY)) handleUI(touchX, touchY);
 }
 
-// ------------------ سیستم رنگ پویا ------------------
-uint16_t getColor(uint8_t colorIndex) {
-  return COLORS[darkMode][colorIndex];
+// -------- مدیریت رنگ‌ها --------
+uint16_t getColor(uint8_t index) {
+  return COLORS[darkMode][index];
 }
 
-// ------------------ رابط کاربری پیشرفته ------------------
+// -------- نمایش صفحه اصلی --------
 void drawHomeScreen() {
-  tft.fillScreen(getColor(BACKGROUND));
+  tft.fillScreen(getColor(3));
   drawStatusBar();
   drawAppGrid();
 }
 
 void drawStatusBar() {
-  tft.fillRect(0, 0, 240, 30, getColor(PRIMARY));
+  tft.fillRect(0, 0, 240, 30, getColor(0));
+  drawText("ESP32 Phone", 10, 8, 4);
   
-  // نمایش زمان واقعی
   struct tm timeinfo;
-  if(getLocalTime(&timeinfo)){
-    char timeStr[9];
-    strftime(timeStr, 9, "%H:%M:%S", &timeinfo);
-    drawText(timeStr, 160, 8, TEXT, 1);
+  if(getLocalTime(&timeinfo)) {
+    char timeStr[6];
+    strftime(timeStr, 6, "%H:%M", &timeinfo);
+    drawText(timeStr, 180, 8, 4);
   }
-  
-  drawText("ESP32 Phone", 10, 8, TEXT, 1);
 }
 
 void drawAppGrid() {
   for(uint8_t i=0; i<3; i++) {
-    uint8_t appIndex = currentPage*3 + i;
-    if(appIndex >= APPS_COUNT) break;
-    
-    drawAppIcon(apps[appIndex].label, (i%3)*80+20, 80);
+    if(i >= APPS_COUNT) break;
+    drawAppIcon(apps[i].label, (i%3)*80+20, 80);
   }
 }
 
 void drawAppIcon(const char* label, int x, int y) {
-  tft.fillRoundRect(x, y, 80, 80, 15, getColor(SECONDARY));
-  drawText(label, x+15, y+90, TEXT, 1);
+  tft.fillRoundRect(x, y, 80, 80, 10, getColor(1));
+  drawText(label, x+15, y+90, 4);
 }
 
-// ------------------ مدیریت تاچ پیشرفته ------------------
+// -------- مدیریت تاچ --------
 void handleUI(int16_t x, int16_t y) {
-  static uint8_t currentApp = 255;
-  
-  if(currentApp == 255) { // حالت اصلی
-    if(y > 30 && y < 280) { // ناحیه آیکون‌ها
-      handleAppSelection(x, y);
-    }
-    else if(y > 280) { // ناحیه ناوبری
-      handleNavigation(x, y);
-    }
-  }
-  else { // حالت اپلیکیشن
-    apps[currentApp].update();
-  }
+  if(y > 30 && y < 280) handleAppSelection(x, y);
 }
 
 void handleAppSelection(int16_t x, int16_t y) {
   for(uint8_t i=0; i<3; i++) {
-    uint8_t appIndex = currentPage*3 + i;
-    if(appIndex >= APPS_COUNT) break;
-    
+    if(i >= APPS_COUNT) break;
     int ax = (i%3)*80+20;
     if(x > ax && x < ax+80 && y > 80 && y < 160) {
       animateIcon(ax, 80);
-      launchApp(appIndex);
+      apps[i].launch();
     }
   }
 }
 
 void animateIcon(int x, int y) {
-  tft.fillRoundRect(x, y, 80, 80, 15, getColor(ACCENT));
-  delay(80);
-  tft.fillRoundRect(x, y, 80, 80, 15, getColor(SECONDARY));
+  tft.fillRoundRect(x, y, 80, 80, 10, getColor(2));
+  delay(100);
+  tft.fillRoundRect(x, y, 80, 80, 10, getColor(1));
 }
 
-// ------------------ اپلیکیشن وای‌فای پیشرفته ------------------
+// -------- اپلیکیشن WiFi --------
 void launchWiFi() {
-  tft.fillScreen(getColor(BACKGROUND));
+  tft.fillScreen(getColor(3));
   drawStatusBar();
-  drawScrollableArea();
   scanWiFiNetworks();
 }
 
 void updateWiFi() {
-  // مدیریت اسکرول لمسی
-  static int16_t startY = -1;
   int16_t x, y;
-  
   if(touchManager.getTouch(x, y)) {
-    if(startY == -1) startY = y;
-    else {
-      int delta = startY - y;
-      if(abs(delta) > SCROLL_THRESHOLD) {
-        wifiScrollOffset += delta/10;
-        drawWiFiList();
-        startY = y;
-      }
-    }
-  }
-  else {
-    startY = -1;
+    wifiScrollOffset += (y - 100) / 10;
+    wifiScrollOffset = constrain(wifiScrollOffset, 0, 150);
+    drawWiFiList();
   }
 }
 
 void drawWiFiList() {
-  tft.fillRect(0, 30, 240, 250, getColor(BACKGROUND));
+  tft.fillRect(0, 30, 240, 250, getColor(3));
   for(int i=0; i<5; i++) {
-    int yPos = 30 + i*50 - wifiScrollOffset;
-    if(yPos > 30 && yPos < 280) {
-      drawNetworkItem("WiFi Network", -60, yPos);
-    }
+    int yPos = 50 + i*50 - wifiScrollOffset;
+    if(yPos > 30 && yPos < 280) drawText("WiFi Network", 20, yPos, 5);
   }
 }
 
-// ------------------ توابع کمکی عمومی ------------------
-void drawText(const char* text, int x, int y, uint8_t colorIndex, uint8_t size=1) {
-  tft.setTextColor(getColor(colorIndex));
-  tft.setTextSize(size);
+// -------- توابع کمکی --------
+void drawText(const char* text, int x, int y, uint8_t color) {
+  tft.setTextColor(getColor(color));
+  tft.setTextSize(1);
   tft.setCursor(x, y);
   tft.print(text);
 }
-
-void drawButton(const char* label, int x, int y, int w=60, int h=30) {
-  tft.fillRoundRect(x, y, w, h, 10, getColor(ACCENT));
-  drawText(label, x+15, y+10, TEXT);
-}
-
-// =================== بهبودهای اضافه شده ===================
-// 1. سیستم اسکرول لمسی برای لیست‌های طولانی
-// 2. انیمیشن‌های ظریف برای بازخورد لمسی
-// 3. مدیریت حافظه بهینه‌تر با حذف String
-// 4. معماری ماژولار با استفاده از ساختار App
-// 5. به‌روزرسانی خودکار زمان در نوار وضعیت
-// 6. سیستم تم پویا با آرایه رنگ
-// ========================================================
