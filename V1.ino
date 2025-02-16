@@ -11,6 +11,16 @@
   #include "esp_system.h"       // اطلاعات سیستم
 #endif
 
+// ------------------ ساختار پیام چت ------------------
+struct ChatMessage {
+  String role; // "You" یا "AI"
+  String text;
+};
+
+// ------------------ اطلاعات API ------------------
+String apiKey = "4aad5c7889554117ac142cf8041d6584";
+String baseUrl = "https://api.aimlapi.com/v1";
+
 // ------------------ پیکربندی پین‌ها ------------------
 #define TFT_CS     5
 #define TFT_DC     2
@@ -28,8 +38,8 @@
 
 // ------------------ ثابت‌های طراحی ------------------
 #define PRIMARY_COLOR    0x7B9F   // نوار وضعیت و نوار پایین
-#define SECONDARY_COLOR  0x9CFB   // کادرهای اطلاعات
-#define ACCENT_COLOR     0x03FF   // دکمه‌ها
+#define SECONDARY_COLOR  0x9CFB   // کادرهای اطلاعات (برای پیام‌های AI)
+#define ACCENT_COLOR     0x03FF   // دکمه‌ها (برای پیام‌های کاربر)
 #define BACKGROUND_COLOR 0xEF5D   // پس‌زمینه اصلی
 #define TEXT_COLOR       0x0000   // متن (سیاه)
 #define WIFI_ICON_COLOR  0x07FF   // آیکون وای‌فای
@@ -56,16 +66,44 @@ void launchApp(String appName);
 void drawStatusBar();
 void drawBottomNavBar();
 void drawRoundedRect(uint16_t x, uint16_t y, uint16_t w, uint16_t h, uint16_t radius, uint16_t color);
-uint16_t darkenColor(uint8_t color, uint8_t percent);  // تابع نمونه (در این نسخه ثابت برگردانده می‌شود)
+uint16_t darkenColor(uint8_t color, uint8_t percent);
 String getCurrentTime();
 void drawAppIcons();
 void drawPage(int page);
 String inputText(String prompt);
 String urlencode(String str);
+void drawChatUI(ChatMessage chatMessages[], int chatCount);
 void deepSearch();
 
+// ------------------ توابع API ------------------
+String getAnswerFromAPI(String question) {
+  HTTPClient http;
+  String url = baseUrl + "/chat/completions";
+  http.begin(url);
+  http.addHeader("Content-Type", "application/json");
+  http.addHeader("Authorization", "Bearer " + apiKey);
+
+  // ساخت بدنه JSON با مدل "gpt-4o"
+  String requestBody = "{\"model\": \"gpt-4o\", \"messages\": [{\"role\": \"system\", \"content\": \"You are an AI assistant who knows everything.\"}, {\"role\": \"user\", \"content\": \"" + question + "\"}]}";
+  int httpCode = http.POST(requestBody);
+  Serial.print("HTTP POST code: ");
+  Serial.println(httpCode);
+  if (httpCode > 0) {
+    String response = http.getString();
+    Serial.println("Response: " + response);
+    StaticJsonDocument<1024> doc;
+    deserializeJson(doc, response);
+    String answer = doc["choices"][0]["message"]["content"].as<String>();
+    http.end();
+    return answer;
+  } else {
+    http.end();
+    return "Error contacting API";
+  }
+}
+
 // ------------------ متغیرهای کلیدی ------------------
-int currentPage = 0;         // 0: صفحه اصلی (Home)، 1: صفحات دیگر (به صورت نمونه)
+int currentPage = 0;         // 0: صفحه اصلی (Home)
 bool darkMode = false;
 bool inApp = false;          // وقتی در یک اپ هستیم، لمس‌های صفحه اصلی نادیده گرفته می‌شوند
 
@@ -100,7 +138,6 @@ typedef struct {
 } AppIcon;
 
 AppIcon apps[totalApps];
-
 void initAppIcons() {
   for (int i = 0; i < totalApps; i++) {
     int col = i % numCols;
@@ -114,7 +151,6 @@ void initAppIcons() {
 }
 
 // ------------------ توابع UI ------------------
-
 void drawStatusBar() {
   tft.fillRect(0, 0, 240, 30, darkMode ? DARK_BACKGROUND : PRIMARY_COLOR);
   tft.setTextColor(darkMode ? DARK_TEXT : TEXT_COLOR);
@@ -151,9 +187,7 @@ uint16_t darkenColor(uint8_t color, uint8_t percent) {
 String getCurrentTime() {
   unsigned long currentMillis = millis();
   unsigned long elapsed = currentMillis - previousMillis;
-  if (elapsed >= interval) {
-    previousMillis = currentMillis;
-  }
+  if (elapsed >= interval) { previousMillis = currentMillis; }
   int hrs = (elapsed / 3600000) % 24;
   int mins = (elapsed / 60000) % 60;
   int secs = (elapsed / 1000) % 60;
@@ -166,8 +200,7 @@ void drawAppIcons() {
   for (int i = 0; i < totalApps; i++) {
     int x = apps[i].x;
     int y = apps[i].y;
-    drawRoundedRect(x, y, apps[i].width, apps[i].height, 10,
-                    darkMode ? DARK_BACKGROUND : SECONDARY_COLOR);
+    drawRoundedRect(x, y, apps[i].width, apps[i].height, 10, darkMode ? DARK_BACKGROUND : SECONDARY_COLOR);
     tft.setTextColor(darkMode ? DARK_TEXT : TEXT_COLOR);
     tft.setTextSize(1);
     tft.setCursor(x + 5, y + apps[i].height + 2);
@@ -199,7 +232,6 @@ void drawPage(int page) {
 // ------------------ تابع دریافت متن (کیبورد مجازی) ------------------
 String inputText(String prompt) {
   String inputStr = "";
-  // کیبورد در پایین صفحه از ردیف 150
   bool letterMode = true;
   bool shiftOn = false;
   
@@ -216,20 +248,21 @@ String inputText(String prompt) {
     {".",",","?","!","'","%","^","~","_","<"}
   };
   
+  // موقعیت کیبورد تنظیم شده: کمی به سمت چپ و پایین‌تر
+  int startX = 10, startY = 220;
   const int keyW = 24, keyH = 20, gap = 2;
-  const int startX = 0, startY = 150;
-  const int specialY = startY + ((letterMode ? letterRows : numberRows) * (keyH + gap)) + 5;
-  const int specialKeyW = 60, specialKeyH = 30;
   
   while (true) {
-    // نمایش ورودی در بالای صفحه (ثابت)
+    int specialY = startY + ((letterMode ? letterRows : numberRows) * (keyH + gap)) + 5;
+    
+    // نمایش ورودی در بالای صفحه
     tft.fillRect(10, 70, 220, 20, SECONDARY_COLOR);
     tft.setTextSize(2);
     tft.setCursor(15, 75);
     tft.setTextColor(TEXT_COLOR);
     tft.print(inputStr);
     
-    // رسم کیبورد در پایین صفحه
+    // رسم کیبورد
     if (letterMode) {
       for (int r = 0; r < letterRows; r++) {
         for (int c = 0; c < letterCols; c++) {
@@ -265,7 +298,7 @@ String inputText(String prompt) {
     
     // رسم دکمه‌های ویژه
     int modeKeyX = 10;
-    drawRoundedRect(modeKeyX, specialY, specialKeyW, specialKeyH, 5, ACCENT_COLOR);
+    drawRoundedRect(modeKeyX, specialY, 60, 30, 5, ACCENT_COLOR);
     tft.setTextSize(2);
     tft.setTextColor(TEXT_COLOR);
     tft.setCursor(modeKeyX + 5, specialY + 8);
@@ -273,7 +306,7 @@ String inputText(String prompt) {
     
     if (letterMode) {
       int shiftKeyX = 80;
-      drawRoundedRect(shiftKeyX, specialY, specialKeyW, specialKeyH, 5, ACCENT_COLOR);
+      drawRoundedRect(shiftKeyX, specialY, 60, 30, 5, ACCENT_COLOR);
       tft.setTextSize(2);
       tft.setTextColor(TEXT_COLOR);
       tft.setCursor(shiftKeyX + 5, specialY + 8);
@@ -281,18 +314,27 @@ String inputText(String prompt) {
     }
     
     int delKeyX = letterMode ? 150 : 80;
-    drawRoundedRect(delKeyX, specialY, specialKeyW, specialKeyH, 5, ACCENT_COLOR);
+    drawRoundedRect(delKeyX, specialY, 60, 30, 5, ACCENT_COLOR);
     tft.setTextSize(2);
     tft.setTextColor(TEXT_COLOR);
     tft.setCursor(delKeyX + 5, specialY + 8);
     tft.print("Del");
     
     int enterKeyX = letterMode ? 220 : 150;
-    drawRoundedRect(enterKeyX, specialY, specialKeyW, specialKeyH, 5, ACCENT_COLOR);
+    drawRoundedRect(enterKeyX, specialY, 60, 30, 5, ACCENT_COLOR);
     tft.setTextSize(2);
     tft.setTextColor(TEXT_COLOR);
     tft.setCursor(enterKeyX + 2, specialY + 8);
     tft.print("Ent");
+    
+    // رسم کلید space در سطر بعد از دکمه‌های ویژه
+    int spaceKeyX = startX;
+    int spaceKeyY = specialY + 35;
+    drawRoundedRect(spaceKeyX, spaceKeyY, 100, 30, 5, ACCENT_COLOR);
+    tft.setTextSize(2);
+    tft.setTextColor(TEXT_COLOR);
+    tft.setCursor(spaceKeyX + 5, spaceKeyY + 8);
+    tft.print("Space");
     
     bool keyPressed = false;
     if (touch.touched()) {
@@ -300,6 +342,7 @@ String inputText(String prompt) {
       int16_t tx = map(p.y, 3750, 250, 0, 240);
       int16_t ty = map(p.x, 250, 3750, 0, 320);
       
+      // بررسی لمس کلیدهای حروف/اعداد
       if (ty >= startY && ty < startY + (letterMode ? letterRows : numberRows) * (keyH + gap)) {
         int col = tx / (keyW + gap);
         int row = (ty - startY) / (keyH + gap);
@@ -314,23 +357,33 @@ String inputText(String prompt) {
         }
       }
       
-      if (ty >= specialY && ty < specialY + specialKeyH) {
-        if (tx >= modeKeyX && tx < modeKeyX + specialKeyW) {
+      // بررسی لمس کلیدهای ویژه
+      if (ty >= specialY && ty < specialY + 30) {
+        if (tx >= modeKeyX && tx < modeKeyX + 60) {
           letterMode = !letterMode;
           keyPressed = true;
           delay(300);
-        } else if (letterMode && tx >= 80 && tx < 80 + specialKeyW) {
+        } else if (letterMode && tx >= 80 && tx < 80 + 60) {
           shiftOn = !shiftOn;
           keyPressed = true;
           delay(300);
-        } else if (tx >= delKeyX && tx < delKeyX + specialKeyW) {
+        } else if (tx >= delKeyX && tx < delKeyX + 60) {
           if (inputStr.length() > 0)
             inputStr.remove(inputStr.length() - 1);
           keyPressed = true;
           delay(300);
-        } else if (tx >= enterKeyX && tx < enterKeyX + specialKeyW) {
+        } else if (tx >= enterKeyX && tx < enterKeyX + 60) {
           keyPressed = true;
           break;
+        }
+      }
+      
+      // بررسی لمس کلید space
+      if (ty >= (specialY + 35) && ty < (specialY + 35 + 30)) {
+        if (tx >= spaceKeyX && tx < spaceKeyX + 100) {
+          inputStr += " ";
+          keyPressed = true;
+          delay(300);
         }
       }
       
@@ -374,78 +427,83 @@ String urlencode(String str) {
   return encoded;
 }
 
-// ------------------ تابع DeepSearch با API Deepseek ------------------
-void deepSearch() {
-  String query = inputText("Search Query:");
-  String encodedQuery = urlencode(query);
-  String url = "https://api.deepseek.com/v1/search?query=" + encodedQuery;
-  
-  WiFiClientSecure client;
-  client.setInsecure(); // برای تست؛ در پروژه‌های واقعی بهتر است گواهی‌ها را اعتبارسنجی کنید
-  HTTPClient http;
-  http.begin(client, url);
-  http.addHeader("Content-Type", "application/json");
-  String apiKey = "sk-5b095ce73531413a9e80272a28a285dd";
-  http.addHeader("Authorization", "Bearer " + apiKey);
-  
-  int httpCode = http.GET();
-  tft.fillScreen(darkMode ? DARK_BACKGROUND : BACKGROUND_COLOR);
-  drawStatusBar();
-  if (httpCode > 0) {
-    if (httpCode == HTTP_CODE_OK) {
-      String payload = http.getString();
-      const size_t capacity = 2048;
-      DynamicJsonDocument doc(capacity);
-      DeserializationError error = deserializeJson(doc, payload);
+// ------------------ تابع رسم رابط کاربری چت ------------------
+void drawChatUI(ChatMessage chatMessages[], int chatCount) {
+  // پاکسازی ناحیه چت (از y=30 تا y=240)
+  tft.fillRect(0, 30, 240, 210, darkMode ? DARK_BACKGROUND : BACKGROUND_COLOR);
+  int currentY = 35; // فاصله از بالا
+  int maxCharsPerLine = 20; // تعداد کاراکتر در یک خط (قابل تنظیم)
+  for (int i = 0; i < chatCount; i++) {
+    String msg = chatMessages[i].text;
+    // محاسبه تعداد خطوط مورد نیاز
+    int lines = (msg.length() + maxCharsPerLine - 1) / maxCharsPerLine;
+    int boxHeight = lines * 15 + 5; // هر خط ~15 پیکسل + کمی حاشیه
+    int boxWidth;
+    if (msg.length() < maxCharsPerLine)
+      boxWidth = msg.length() * 6 + 10;
+    else
+      boxWidth = maxCharsPerLine * 6 + 10;
+    if (boxWidth > 180) boxWidth = 180;
+    int boxX;
+    if (chatMessages[i].role == "AI") {
+      boxX = 10;
+      tft.fillRoundRect(boxX, currentY, boxWidth, boxHeight, 3, SECONDARY_COLOR);
+      tft.drawRoundRect(boxX, currentY, boxWidth, boxHeight, 3, TEXT_COLOR);
+      tft.setTextColor(TEXT_COLOR);
       tft.setTextSize(1);
-      int yPos = 40;
-      if (!error) {
-        JsonArray results = doc["results"].as<JsonArray>();
-        for (JsonObject result : results) {
-          const char* title = result["title"];
-          tft.setCursor(10, yPos);
-          tft.print(title);
-          yPos += 12;
-          if (yPos > 280) break;
-        }
-      } else {
-        tft.setTextSize(2);
-        tft.setCursor(10, 80);
-        tft.print("JSON Error");
-      }
-    } else {
-      tft.setTextSize(2);
-      tft.setCursor(10, 80);
-      tft.print("HTTP Error");
+      tft.setCursor(boxX + 5, currentY + 5);
+      tft.print(msg);
+    } else { // پیام کاربر
+      boxX = 240 - boxWidth - 10;
+      tft.fillRoundRect(boxX, currentY, boxWidth, boxHeight, 3, ACCENT_COLOR);
+      tft.drawRoundRect(boxX, currentY, boxWidth, boxHeight, 3, TEXT_COLOR);
+      tft.setTextColor(TEXT_COLOR);
+      tft.setTextSize(1);
+      tft.setCursor(boxX + 5, currentY + 5);
+      tft.print(msg);
     }
-  } else {
-    tft.setTextSize(2);
-    tft.setCursor(10, 80);
-    tft.print("Request Failed");
+    currentY += boxHeight + 5;
+    if (currentY > 230) break;
   }
-  http.end();
+}
+
+// ------------------ تابع DeepSearch (حالت چت با UI بهبود یافته) ------------------
+void deepSearch() {
+  ChatMessage chatMessages[20];
+  int chatCount = 0;
+  bool exitChat = false;
   
-  // دکمه Back
-  drawRoundedRect(10, 270, 100, 25, 8, ACCENT_COLOR);
-  tft.setTextSize(2);
-  tft.setCursor(20, 275);
-  tft.setTextColor(TEXT_COLOR);
-  tft.print("Back");
-  while (true) {
-    if (touch.touched()) {
-      TS_Point p = touch.getPoint();
-      int16_t tx = map(p.y, 3750, 250, 0, 240);
-      int16_t ty = map(p.x, 250, 3750, 0, 320);
-      if (tx >= 10 && tx <= 110 && ty >= 270 && ty <= 295)
-        break;
+  while (!exitChat) {
+    tft.fillScreen(darkMode ? DARK_BACKGROUND : BACKGROUND_COLOR);
+    drawStatusBar();
+    drawChatUI(chatMessages, chatCount);
+    
+    String userMsg = inputText("Your message:");
+    if (userMsg.equalsIgnoreCase("back")) {
+      exitChat = true;
+      break;
     }
-    delay(100);
+    
+    if (chatCount < 20) {
+      chatMessages[chatCount].role = "You";
+      chatMessages[chatCount].text = userMsg;
+      chatCount++;
+    }
+    drawChatUI(chatMessages, chatCount);
+    
+    String aiAnswer = getAnswerFromAPI(userMsg);
+    if (chatCount < 20) {
+      chatMessages[chatCount].role = "AI";
+      chatMessages[chatCount].text = aiAnswer;
+      chatCount++;
+    }
+    drawChatUI(chatMessages, chatCount);
   }
+  
   launchWiFiApp();
 }
 
 // ------------------ عملکرد اپ‌ها اختصاصی ------------------
-
 void launchWiFiApp() {
   inApp = true;
   tft.fillScreen(darkMode ? DARK_BACKGROUND : BACKGROUND_COLOR);
@@ -454,7 +512,7 @@ void launchWiFiApp() {
   tft.setCursor(50, 60);
   tft.setTextColor(darkMode ? DARK_TEXT : TEXT_COLOR);
   tft.print("WiFi App");
-  // دو دکمه: Search و DeepSearch
+  
   drawRoundedRect(10, 270, 100, 25, 8, ACCENT_COLOR);
   tft.setTextSize(2);
   tft.setCursor(20, 275);
@@ -470,10 +528,8 @@ void launchWiFiApp() {
       TS_Point p = touch.getPoint();
       int16_t tx = map(p.y, 3750, 250, 0, 240);
       int16_t ty = map(p.x, 250, 3750, 0, 320);
-      // اگر دکمه Search لمس شد
       if (tx >= 10 && tx < 110 && ty >= 270 && ty < 295)
         break;
-      // اگر دکمه DeepSearch لمس شد
       if (tx >= 130 && tx < 230 && ty >= 270 && ty < 295) {
         deepSearch();
         return;
@@ -482,6 +538,7 @@ void launchWiFiApp() {
     delay(100);
   }
   
+  // ادامه‌ی اپ WiFi (اسکن و اتصال)
   tft.fillScreen(darkMode ? DARK_BACKGROUND : BACKGROUND_COLOR);
   drawStatusBar();
   tft.setTextSize(2);
@@ -698,9 +755,9 @@ void launchCalcApp() {
       TS_Point p = touch.getPoint();
       int16_t tx = map(p.y, 3750, 250, 0, 240);
       int16_t ty = map(p.x, 250, 3750, 0, 320);
-      if (ty >= startY && ty < startY + 4 * keyH) {
+      if (ty >= startX && ty < startX + 4 * keyH) {
         uint8_t col = tx / keyW;
-        uint8_t row = (ty - startY) / keyH;
+        uint8_t row = (ty - startX) / keyH;
         if (row < 4 && col < 4) {
           String key = keys[row][col];
           if (key == "C") {
@@ -905,7 +962,6 @@ void launchChatApp() {
   drawBottomNavBar();
 }
 
-// ------------------ تابع اجرای اپ‌ها کلی ------------------
 void launchApp(String appName) {
   if (appName == "WiFi") {
     launchWiFiApp();
@@ -969,7 +1025,6 @@ void setup() {
   tft.fillScreen(darkMode ? DARK_BACKGROUND : BACKGROUND_COLOR);
   tft.invertDisplay(true);
   
-  // راه‌اندازی صفحه لمسی
   hspi.begin(TOUCH_SCLK, TOUCH_MISO, TOUCH_MOSI, TOUCH_CS);
   touch.begin(hspi);
   
@@ -984,7 +1039,6 @@ void loop() {
     TS_Point p = touch.getPoint();
     int16_t tx = map(p.y, 3750, 250, 0, 240);
     int16_t ty = map(p.x, 250, 3750, 0, 320);
-    // بررسی لمس نوار پایین
     if (ty >= 300 && ty <= 320) {
       if (tx < 120) {
         inApp = false;
@@ -1013,29 +1067,25 @@ void loop() {
     int16_t x = map(p.y, 3750, 250, 0, 240);
     int16_t y = map(p.x, 250, 3750, 0, 320);
     
-    // در این نسخه صفحه اصلی ثابت است (بدون اسکرول)
     static int16_t lastX = 0;
     if (lastX == 0)
       lastX = x;
     else {
       if (abs(lastX - x) > 30) {
-        // به عنوان نمونه تغییر صفحه (در اپ‌های دیگر) انجام می‌شود
         currentPage = (currentPage + 1) % 3;
         drawPage(currentPage);
       }
       lastX = 0;
     }
     
-    // لمس روی اپ‌های صفحه اصلی
     for (int i = 0; i < totalApps; i++) {
       int iconX = apps[i].x;
-      int iconY = apps[i].y; // بدون اسکرول
+      int iconY = apps[i].y;
       if (x > iconX && x < iconX + apps[i].width &&
           y > iconY && y < iconY + apps[i].height) {
         drawRoundedRect(iconX, iconY, apps[i].width, apps[i].height, 15, ACCENT_COLOR);
         delay(100);
-        drawRoundedRect(iconX, iconY, apps[i].width, apps[i].height, 15,
-                        darkMode ? DARK_BACKGROUND : SECONDARY_COLOR);
+        drawRoundedRect(iconX, iconY, apps[i].width, apps[i].height, 15, darkMode ? DARK_BACKGROUND : SECONDARY_COLOR);
         launchApp(appLabels[i]);
       }
     }
